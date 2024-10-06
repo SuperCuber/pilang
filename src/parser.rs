@@ -1,4 +1,6 @@
-use crate::data::Value;
+use std::collections::HashMap;
+
+use crate::data::{List, Map, Value};
 
 peg::parser! {
   grammar pi_parser() for str {
@@ -11,6 +13,9 @@ peg::parser! {
     rule number() -> u32
       = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
 
+    rule string() -> String
+      = "\"" s:$([^ '"']*) "\"" { s.to_string() }
+
     rule ident()
         = quiet!{[ 'a'..='z' | 'A'..='Z']['a'..='z' | 'A'..='Z' | '0'..='9' ]*}
         / expected!("identifier")
@@ -20,6 +25,9 @@ peg::parser! {
 
     rule value() -> Value
       = n:number() { Value::Number(n) }
+      / s:string() { Value::String(s.to_string()) }
+      / "[" __ v:value() ** _ __ "]" { Value::List(List { elements: v, rest: None }) }
+      / "{" __ pairs:(k:string() __ ":" __ v:value() {(k,v)}) ** _ __ "}" { Value::Map(Map { elements: pairs.into_iter().collect(), rest: None }) }
 
     pub rule command() -> Command
         = f:$(ident()) args:(_ a:value() ** _ {a})? {
