@@ -1,3 +1,4 @@
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Function {0} not found")]

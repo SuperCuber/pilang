@@ -1,6 +1,8 @@
 // TODO
 #![allow(dead_code)]
 #![allow(unused_imports)]
+// TODO: parallelize that shit
+#![allow(clippy::arc_with_non_send_sync)]
 
 use anyhow::{Context, Result};
 use interpreter::Interpreter;
@@ -37,6 +39,8 @@ fn run_prompt() -> Result<()> {
 }
 
 fn prompt(interpreter: &Interpreter) {
+    // TODO: print interpreter status (current chain of >>)
+    // interpreter.status();
     let val = interpreter.value();
     if let Err(err) = val.sample() {
         eprintln!("Error: {:#?}", err);

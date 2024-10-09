@@ -58,11 +58,10 @@ impl List {
     }
 
     pub fn realize_all(&self) -> error::Result<()> {
-        if let Some(mut rest) = self.rest.take() {
+        if let Some(rest) = self.rest.take() {
             let mut elems = self.elements.borrow_mut();
-            while let Some(next) = rest.next() {
-                let next = next?;
-                elems.push(next);
+            for elem in rest {
+                elems.push(elem?);
             }
         }
         Ok(())
@@ -134,10 +133,8 @@ impl std::fmt::Display for List {
             if self.rest.borrow().is_some() {
                 write!(f, ", ...")?;
             }
-        } else {
-            if self.rest.borrow().is_some() {
-                write!(f, "...")?;
-            }
+        } else if self.rest.borrow().is_some() {
+            write!(f, "...")?;
         }
         write!(f, "]")
     }
@@ -179,10 +176,10 @@ impl Dict {
     }
 
     pub fn realize_look_for(&self, key: &str) -> error::Result<Option<SValue>> {
-        if let Some(mut rest) = self.rest.take() {
+        if let Some(rest) = self.rest.take() {
             let mut elems = self.elements.borrow_mut();
-            while let Some(next) = rest.next() {
-                let (k, v) = next?;
+            for elem in rest {
+                let (k, v) = elem?;
                 elems.insert(k.clone(), v.clone());
                 if k == key {
                     return Ok(Some(v));
@@ -193,10 +190,10 @@ impl Dict {
     }
 
     pub fn realize_all(&self) -> error::Result<()> {
-        if let Some(mut rest) = self.rest.take() {
+        if let Some(rest) = self.rest.take() {
             let mut elems = self.elements.borrow_mut();
-            while let Some(next) = rest.next() {
-                let (k, v) = next?;
+            for elem in rest {
+                let (k, v) = elem?;
                 elems.insert(k, v);
             }
         }
@@ -227,10 +224,8 @@ impl std::fmt::Display for Dict {
             if self.rest.borrow().is_some() {
                 write!(f, ", ...")?;
             }
-        } else {
-            if self.rest.borrow().is_some() {
-                write!(f, "...")?;
-            }
+        } else if self.rest.borrow().is_some() {
+            write!(f, "...")?;
         }
         write!(f, "}}")
     }

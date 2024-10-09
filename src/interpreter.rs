@@ -40,8 +40,10 @@ impl Interpreter {
                 let result = Interpreter::eval_expression(self.context.clone(), e, this)?;
                 self.program.push(ExecutedCommand { command, result });
             }
-            Command::ShiftLeft => todo!(),
-            Command::ShiftRight => todo!(),
+            Command::ShiftRight(None) => todo!(),
+            Command::ShiftLeft(None) => todo!(),
+            Command::ShiftRight(Some((_, _))) => todo!(),
+            Command::ShiftLeft(Some((_, _))) => todo!(),
         }
         Ok(())
     }

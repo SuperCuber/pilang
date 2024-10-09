@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     data::{Function, SValue, Value},
@@ -81,7 +81,7 @@ fn json(mut args: Vec<SValue>) -> error::Result<SValue> {
         )));
     };
 
-    let parsed: serde_json::Value = serde_json::from_str(&s)
+    let parsed: serde_json::Value = serde_json::from_str(s)
         .map_err(|e| error::Error::BuiltinFunctionError(format!("failed to parse JSON: {}", e)))?;
 
     Ok(SValue::new(Value::from(parsed)))
@@ -109,7 +109,7 @@ impl From<serde_json::Value> for Value {
                     .collect::<Vec<_>>()
                     .into();
                 Value::List(crate::data::List {
-                    elements: vals.into(),
+                    elements: RefCell::new(vals),
                     rest: None.into(),
                 })
             }

@@ -12,7 +12,8 @@ peg::parser! {
         = quiet!{[ 'a'..='z' | 'A'..='Z']['a'..='z' | 'A'..='Z' | '0'..='9' ]*}
         / expected!("identifier")
 
-    // = Literal
+    rule parens() -> Expression
+        = "(" _? e:expression() _? ")" { e }
 
     rule number() -> u64
       = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
@@ -39,6 +40,7 @@ peg::parser! {
 
     rule expression() -> Expression
       = "%" { Expression::This }
+      / p:parens() { p }
       / l:literal() { Expression::Literal(SValue::new(l)) }
       / l:list() { Expression::List(l) }
       / d:dict() { Expression::Dict(d) }
@@ -46,8 +48,12 @@ peg::parser! {
 
     pub rule command() -> Command
         = e:expression() { Command::Expression(e) }
-        / ">>" { Command::ShiftRight }
-        / "<<" { Command::ShiftLeft }
+        / ">>" kv:(_ k:$(ident()) _? ":" _? v:$(ident()) {(k,v)})? {
+            Command::ShiftRight(kv.map(|(k,v)| (k.into(), v.into())))
+        }
+        / "<<" kv:(_ k:expression() _? ":" _? v:expression() {(k,v)})? {
+            Command::ShiftLeft(kv)
+        }
 
     pub rule user_input() -> UserInput
         = "." f:function_call() { UserInput::Directive(f.0, f.1) }
@@ -67,8 +73,10 @@ pub enum Expression {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Command {
-    ShiftLeft,
-    ShiftRight,
+    /// The strings signify that we want to map over the string as actual pairs, bound to the following names
+    ShiftRight(Option<(String, String)>),
+    /// The expressions signify that we want to collect into a map, with the following pairs
+    ShiftLeft(Option<(Expression, Expression)>),
     Expression(Expression),
 }
 
@@ -99,7 +107,7 @@ mod test {
         );
 
         assert_eq!(
-            pi_parser::command("[1,2,3]"),
+            pi_parser::command("[1, 2  ,3]"),
             Ok(Command::Expression(Expression::List(vec![
                 Expression::Literal(SValue::new(Value::Int(1))),
                 Expression::Literal(SValue::new(Value::Int(2))),
@@ -125,6 +133,20 @@ mod test {
         );
 
         assert_eq!(
+            pi_parser::command("get % (get 123)"),
+            Ok(Command::Expression(Expression::FunctionCall(
+                "get".to_string(),
+                vec![
+                    Expression::This,
+                    Expression::FunctionCall(
+                        "get".to_string(),
+                        vec![Expression::Literal(SValue::new(Value::Int(123)))],
+                    )
+                ]
+            )))
+        );
+
+        assert_eq!(
             pi_parser::command("print"),
             Ok(Command::Expression(Expression::FunctionCall(
                 "print".to_string(),
@@ -140,9 +162,25 @@ mod test {
             )))
         );
 
-        assert_eq!(pi_parser::command(">>"), Ok(Command::ShiftRight));
+        assert_eq!(pi_parser::command(">>"), Ok(Command::ShiftRight(None)));
 
-        assert_eq!(pi_parser::command("<<"), Ok(Command::ShiftLeft));
+        assert_eq!(
+            pi_parser::command(">> key:value"),
+            Ok(Command::ShiftRight(Some((
+                "key".to_string(),
+                "value".to_string()
+            ))))
+        );
+
+        assert_eq!(pi_parser::command("<<"), Ok(Command::ShiftLeft(None)));
+
+        assert_eq!(
+            pi_parser::command("<< \"test\": 1"),
+            Ok(Command::ShiftLeft(Some((
+                Expression::Literal(SValue::new(Value::String("test".to_string()))),
+                Expression::Literal(SValue::new(Value::Int(1)))
+            ))))
+        );
 
         assert_eq!(
             pi_parser::user_input(".print"),
