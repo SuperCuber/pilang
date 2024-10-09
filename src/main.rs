@@ -1,13 +1,14 @@
 // TODO
 #![allow(dead_code)]
 #![allow(unused_imports)]
-#![allow(unused_variables)]
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use interpreter::Interpreter;
 use std::io::{stdin, stdout, BufRead, Write};
 
+mod builtin;
 mod data;
+mod error;
 mod interpreter;
 mod parser;
 
@@ -40,7 +41,9 @@ fn run_prompt() -> Result<()> {
 fn run(line: String, interpreter: &mut Interpreter) -> Result<()> {
     let input = parser::user_input(&line)?;
     match input {
-        parser::UserInput::Command(command) => interpreter.run(command),
+        parser::UserInput::Command(command) => {
+            interpreter.run(command).context("running command")?
+        }
         parser::UserInput::Directive(_, _) => todo!(),
     }
     interpreter.show_sample();

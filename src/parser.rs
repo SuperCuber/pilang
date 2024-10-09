@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::data::{Dict, List, Value};
+use crate::data::{Dict, List, SValue, Value};
 
 peg::parser! {
   grammar pi_parser() for str {
@@ -14,18 +14,19 @@ peg::parser! {
 
     // = Literal
 
-    rule number() -> u32
+    rule number() -> u64
       = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
 
     rule string() -> String
       = "\"" s:$([^ '"']*) "\"" { s.to_string() }
 
     rule literal() -> Value
-      = n:number() { Value::Number(n) }
+        // TODO: float, null, bool
+      = n:number() { Value::Int(n) }
       / s:string() { Value::String(s.to_string()) }
 
     rule list() -> Vec<Expression>
-      = "[" _? v:expression() ** _ _? "]" { v }
+      = "[" _? v:expression() ** (_? "," _?) _? "]" { v }
 
     rule _pair() -> (String, Expression)
       = k:string() _? ":" _? v:expression() { (k, v) }
@@ -38,7 +39,7 @@ peg::parser! {
 
     rule expression() -> Expression
       = "%" { Expression::This }
-      / l:literal() { Expression::Literal(l) }
+      / l:literal() { Expression::Literal(SValue::new(l)) }
       / l:list() { Expression::List(l) }
       / d:dict() { Expression::Dict(d) }
       / f:function_call() { Expression::FunctionCall(f.0, f.1) }
@@ -53,18 +54,18 @@ peg::parser! {
         / c:command() { UserInput::Command(c) }
   }
 }
-pub use pi_parser::user_input;
+pub use pi_parser::{command, user_input};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     This,
-    Literal(Value),
+    Literal(SValue),
     List(Vec<Expression>),
     Dict(HashMap<String, Expression>),
     FunctionCall(String, Vec<Expression>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Command {
     ShiftLeft,
     ShiftRight,
@@ -85,29 +86,36 @@ mod test {
     fn test_basic() {
         assert_eq!(
             pi_parser::command("123"),
-            Ok(Command::Expression(Expression::Literal(Value::Number(123))))
-        );
-
-        assert_eq!(
-            pi_parser::command("\"hello\""),
-            Ok(Command::Expression(Expression::Literal(Value::String(
-                "hello".to_string()
+            Ok(Command::Expression(Expression::Literal(SValue::new(
+                Value::Int(123)
             ))))
         );
 
         assert_eq!(
-            pi_parser::command("[123]"),
+            pi_parser::command("\"hello\""),
+            Ok(Command::Expression(Expression::Literal(SValue::new(
+                Value::String("hello".to_string())
+            ))))
+        );
+
+        assert_eq!(
+            pi_parser::command("[1,2,3]"),
             Ok(Command::Expression(Expression::List(vec![
-                Expression::Literal(Value::Number(123))
+                Expression::Literal(SValue::new(Value::Int(1))),
+                Expression::Literal(SValue::new(Value::Int(2))),
+                Expression::Literal(SValue::new(Value::Int(3))),
             ])))
         );
 
         assert_eq!(
             pi_parser::command("{ \"key\": 123 }"),
             Ok(Command::Expression(Expression::Dict(
-                vec![("key".to_string(), Expression::Literal(Value::Number(123)))]
-                    .into_iter()
-                    .collect()
+                vec![(
+                    "key".to_string(),
+                    Expression::Literal(SValue::new(Value::Int(123)))
+                )]
+                .into_iter()
+                .collect()
             )))
         );
 
@@ -128,7 +136,7 @@ mod test {
             pi_parser::command("print 123"),
             Ok(Command::Expression(Expression::FunctionCall(
                 "print".to_string(),
-                vec![Expression::Literal(Value::Number(123))]
+                vec![Expression::Literal(SValue::new(Value::Int(123)))]
             )))
         );
 
@@ -145,7 +153,7 @@ mod test {
             pi_parser::user_input(".print 123"),
             Ok(UserInput::Directive(
                 "print".to_string(),
-                vec![Expression::Literal(Value::Number(123))]
+                vec![Expression::Literal(SValue::new(Value::Int(123)))]
             ))
         );
     }

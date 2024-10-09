@@ -1,18 +1,23 @@
 use std::{cell::RefCell, collections::HashMap, ops::Deref, sync::Arc};
 
+use crate::error;
+
 /// Shared value
 pub type SValue = Arc<Value>;
 
 #[derive(Debug, PartialEq)]
 pub enum Value {
-    Number(u32),
+    Null,
+    Bool(bool),
+    Int(u64),
+    Float(f64),
     // TODO: strings can be lazy?
     String(String),
     List(List),
     Map(Dict),
 }
 
-type LazyRest<T> = RefCell<Option<Box<dyn Iterator<Item = T>>>>;
+type LazyRest<T> = RefCell<Option<Box<dyn Iterator<Item = error::Result<T>>>>>;
 
 /// Lazily evaluated list
 pub struct List {
@@ -29,31 +34,39 @@ pub struct Dict {
 pub struct Function {
     pub name: String,
     pub arities: Vec<usize>,
-    pub implementation: Box<dyn Fn(Vec<SValue>) -> SValue>,
+    pub implementation: Box<dyn Fn(Vec<SValue>) -> error::Result<SValue>>,
 }
 
 impl List {
-    pub fn get(&self, n: usize) -> Option<SValue> {
-        self.realize(n);
-        self.elements.borrow().get(n).cloned()
+    pub fn get(& self, n: usize) -> error::Result<Option<SValue>> {
+        self.realize(n)?;
+        Ok(self.elements.borrow().get(n).cloned())
     }
 
-    pub fn realize_all(&self) {
-        if let Some(rest) = self.rest.take() {
-            self.elements.borrow_mut().extend(rest);
-        }
-    }
-
-    fn realize(&self, n: usize) {
-        let elements_needed = n - self.elements.borrow().len();
-        if elements_needed > 0 {
-            if let Some(rest) = self.rest.borrow_mut().as_mut() {
-                // Safety: a list will not borrow itself while realizing
-                self.elements
-                    .borrow_mut()
-                    .extend(rest.take(elements_needed));
+    pub fn realize_all(&self) -> error::Result<()> {
+        if let Some(mut rest) = self.rest.take() {
+            let mut elems = self.elements.borrow_mut();
+            while let Some(next) = rest.next() {
+                let next = next?;
+                elems.push(next);
             }
         }
+        Ok(())
+    }
+
+    fn realize(&self, n: usize) -> error::Result<()> {
+        let elements_needed = (n + 1).saturating_sub(self.elements.borrow().len());
+        if elements_needed > 0 {
+            if let Some(rest) = self.rest.borrow_mut().as_mut() {
+                let mut rest = rest.take(elements_needed);
+                let mut elems = self.elements.borrow_mut();
+                while let Some(next) = rest.next() {
+                    let next = next?;
+                    elems.push(next);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -73,15 +86,20 @@ impl std::cmp::PartialEq for List {
 }
 
 impl Dict {
-    pub fn get(&mut self, key: &str) -> Option<SValue> {
-        self.realize_all();
-        self.elements.borrow().get(key).cloned()
+    pub fn get(& mut self, key: &str) -> error::Result<Option<SValue>> {
+        self.realize_all()?;
+        Ok(self.elements.borrow().get(key).cloned())
     }
 
-    pub fn realize_all(&mut self) {
-        if let Some(rest) = self.rest.take() {
-            self.elements.borrow_mut().extend(rest);
+    pub fn realize_all(&mut self) -> error::Result<()> {
+        if let Some(mut rest) = self.rest.take() {
+            let mut elems = self.elements.borrow_mut();
+            while let Some(next) = rest.next() {
+                let (k, v) = next?;
+                elems.insert(k, v);
+            }
         }
+        Ok(())
     }
 }
 
