@@ -46,11 +46,11 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn show_sample(&self) {
-        todo!()
+    pub fn undo(&mut self) {
+        self.program.pop();
     }
 
-    fn value(&self) -> SValue {
+    pub fn value(&self) -> SValue {
         self.program.last().unwrap().result.clone()
     }
 

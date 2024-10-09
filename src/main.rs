@@ -21,15 +21,13 @@ fn run_prompt() -> Result<()> {
 
     let stdin = stdin();
     let stdin = stdin.lock();
-    print!("> ");
-    stdout().flush().unwrap();
+    prompt(&interpreter);
     for line in stdin.lines() {
         if let Ok(line) = line {
             if let Err(err) = run(line, &mut interpreter) {
-                eprintln!("{}", err);
+                eprintln!("Error: {:#?}", err);
             };
-            print!("> ");
-            std::io::stdout().flush().unwrap();
+            prompt(&interpreter);
         } else {
             println!("End of input. Goodbye!");
             break;
@@ -38,14 +36,26 @@ fn run_prompt() -> Result<()> {
     Ok(())
 }
 
+fn prompt(interpreter: &Interpreter) {
+    let val = interpreter.value();
+    if let Err(err) = val.sample() {
+        eprintln!("Error: {:#?}", err);
+    };
+    println!("{val}");
+    print!("> ");
+    stdout().flush().unwrap();
+}
+
 fn run(line: String, interpreter: &mut Interpreter) -> Result<()> {
     let input = parser::user_input(&line)?;
     match input {
         parser::UserInput::Command(command) => {
             interpreter.run(command).context("running command")?
         }
-        parser::UserInput::Directive(_, _) => todo!(),
+        parser::UserInput::Directive(name, _) => match name.as_str() {
+            "undo" | "u" => interpreter.undo(),
+            _ => todo!(),
+        },
     }
-    interpreter.show_sample();
     Ok(())
 }
