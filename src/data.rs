@@ -14,7 +14,7 @@ pub enum Value {
     // TODO: strings can be lazy?
     String(String),
     List(List),
-    Map(Dict),
+    Dict(Dict),
 }
 
 type LazyRest<T> = RefCell<Option<Box<dyn Iterator<Item = error::Result<T>>>>>;
@@ -25,7 +25,7 @@ pub struct List {
     pub rest: LazyRest<SValue>,
 }
 
-/// Lazily evaluated map
+/// Lazily evaluated dict
 pub struct Dict {
     pub elements: RefCell<HashMap<String, SValue>>,
     pub rest: LazyRest<(String, SValue)>,
@@ -45,7 +45,7 @@ impl Value {
         // TODO: replace simple "3" heuristic with something better. maybe recursive "size/complexity estimation"
         match self {
             Value::List(l) => l.realize_n(3),
-            Value::Map(m) => m.realize_n(3),
+            Value::Dict(m) => m.realize_n(3),
             _ => Ok(()),
         }
     }
@@ -99,11 +99,12 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Int(n) => write!(f, "{}", n),
             Value::Float(n) => write!(f, "{}", n),
+            // TODO: hide the rest if its too much
             Value::String(s) => write!(f, "{:?}", s),
             Value::List(l) => {
                 write!(f, "{}", l)
             }
-            Value::Map(m) => {
+            Value::Dict(m) => {
                 write!(f, "{}", m)
             }
         }
@@ -119,6 +120,7 @@ impl std::fmt::Debug for List {
     }
 }
 
+// TODO: hide the rest if its too much
 impl std::fmt::Display for List {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
@@ -149,7 +151,7 @@ impl std::cmp::PartialEq for List {
 
 impl Dict {
     pub fn get(&self, key: &str) -> error::Result<Option<SValue>> {
-        self.realize_all()?;
+        self.realize_look_for(key)?;
         Ok(self.elements.borrow().get(key).cloned())
     }
 
@@ -176,6 +178,20 @@ impl Dict {
         Ok(())
     }
 
+    pub fn realize_look_for(&self, key: &str) -> error::Result<Option<SValue>> {
+        if let Some(mut rest) = self.rest.take() {
+            let mut elems = self.elements.borrow_mut();
+            while let Some(next) = rest.next() {
+                let (k, v) = next?;
+                elems.insert(k.clone(), v.clone());
+                if k == key {
+                    return Ok(Some(v));
+                }
+            }
+        }
+        Ok(self.elements.borrow().get(key).cloned())
+    }
+
     pub fn realize_all(&self) -> error::Result<()> {
         if let Some(mut rest) = self.rest.take() {
             let mut elems = self.elements.borrow_mut();
@@ -190,13 +206,14 @@ impl Dict {
 
 impl std::fmt::Debug for Dict {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("Map")
+        f.debug_struct("Dict")
             .field("elements", &self.elements)
             .field("lazy_extra", &self.rest.borrow().is_some())
             .finish()
     }
 }
 
+// TODO: hide the rest if its too much
 impl std::fmt::Display for Dict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{")?;

@@ -33,17 +33,17 @@ fn get(mut args: Vec<SValue>) -> error::Result<SValue> {
         "get function expects exactly two arguments"
     );
     let key = args.remove(1);
-    let map = args.remove(0);
+    let container = args.remove(0);
 
     match &*key {
         Value::String(s) => {
-            let Value::Map(map) = &*map else {
+            let Value::Dict(dict) = &*container else {
                 return Err(error::Error::BuiltinFunctionError(format!(
-                    "get function expects a map as the second argument, got {:?}",
-                    map
+                    "get function expects a dict as the first argument, got {:?}",
+                    container
                 )));
             };
-            let value = map
+            let value = dict
                 .elements
                 .borrow()
                 .get(s)
@@ -52,10 +52,10 @@ fn get(mut args: Vec<SValue>) -> error::Result<SValue> {
             Ok(value)
         }
         Value::Int(n) => {
-            let Value::List(list) = &*map else {
+            let Value::List(list) = &*container else {
                 return Err(error::Error::BuiltinFunctionError(format!(
-                    "get function expects a list as the second argument, got {:?}",
-                    map
+                    "get function expects a list as the first argument, got {:?}",
+                    container
                 )));
             };
             list.get(*n as usize)?.ok_or_else(|| {
@@ -63,7 +63,7 @@ fn get(mut args: Vec<SValue>) -> error::Result<SValue> {
             })
         }
         _ => Err(error::Error::BuiltinFunctionError(
-            "get function expects a string or an integer as the first argument".to_string(),
+            "get function expects a string or an integer as the second argument".to_string(),
         )),
     }
 }
@@ -118,7 +118,7 @@ impl From<serde_json::Value> for Value {
                     .into_iter()
                     .map(|(k, v)| (k, SValue::new(Value::from(v))))
                     .collect();
-                Value::Map(crate::data::Dict {
+                Value::Dict(crate::data::Dict {
                     elements: vals.into(),
                     rest: None.into(),
                 })

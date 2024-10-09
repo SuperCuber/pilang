@@ -17,7 +17,7 @@ fn main() -> Result<()> {
 }
 
 fn run_prompt() -> Result<()> {
-    let mut interpreter = Interpreter::new("".into());
+    let mut interpreter = Interpreter::new("{\"a\": 1, \"b\": 2.0, \"c\": [1,2,3], \"d\": null}".into());
 
     let stdin = stdin();
     let stdin = stdin.lock();
@@ -54,7 +54,8 @@ fn run(line: String, interpreter: &mut Interpreter) -> Result<()> {
         }
         parser::UserInput::Directive(name, _) => match name.as_str() {
             "undo" | "u" => interpreter.undo(),
-            _ => todo!(),
+            "exit" | "quit" | "q" => std::process::exit(0),
+            _ => eprintln!("Unknown directive `{}`", name),
         },
     }
     Ok(())
