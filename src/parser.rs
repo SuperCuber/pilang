@@ -1,14 +1,18 @@
 use std::collections::HashMap;
 
-use crate::data::{List, Map, Value};
+use crate::data::{Dict, List, Value};
 
 peg::parser! {
   grammar pi_parser() for str {
-    rule __()
+    // Util
+    rule _()
       = [' ' | '\n' | '\t']+
 
-    rule _()
-      = __()?
+    rule ident()
+        = quiet!{[ 'a'..='z' | 'A'..='Z']['a'..='z' | 'A'..='Z' | '0'..='9' ]*}
+        / expected!("identifier")
+
+    // = Literal
 
     rule number() -> u32
       = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
@@ -16,65 +20,133 @@ peg::parser! {
     rule string() -> String
       = "\"" s:$([^ '"']*) "\"" { s.to_string() }
 
-    rule ident()
-        = quiet!{[ 'a'..='z' | 'A'..='Z']['a'..='z' | 'A'..='Z' | '0'..='9' ]*}
-        / expected!("identifier")
-
-    rule keyword() -> Keyword
-      = k:$(ident()) {? k.parse().or(Err("keyword")) }
-
-    rule value() -> Value
+    rule literal() -> Value
       = n:number() { Value::Number(n) }
       / s:string() { Value::String(s.to_string()) }
-      / "[" __ v:value() ** _ __ "]" { Value::List(List { elements: v, rest: None }) }
-      / "{" __ pairs:(k:string() __ ":" __ v:value() {(k,v)}) ** _ __ "}" { Value::Map(Map { elements: pairs.into_iter().collect(), rest: None }) }
+
+    rule list() -> Vec<Expression>
+      = "[" _? v:expression() ** _ _? "]" { v }
+
+    rule _pair() -> (String, Expression)
+      = k:string() _? ":" _? v:expression() { (k, v) }
+
+    rule dict() -> HashMap<String, Expression>
+      = "{" _? pairs:(_pair() ** (_? "," _?)) _? "}" { pairs.into_iter().collect() }
+
+    rule function_call() -> (String, Vec<Expression>)
+      = f:$(ident()) args:(_ a:expression() ** _ {a})? { (f.to_string(), args.unwrap_or_default()) }
+
+    rule expression() -> Expression
+      = "%" { Expression::This }
+      / l:literal() { Expression::Literal(l) }
+      / l:list() { Expression::List(l) }
+      / d:dict() { Expression::Dict(d) }
+      / f:function_call() { Expression::FunctionCall(f.0, f.1) }
 
     pub rule command() -> Command
-        = f:$(ident()) args:(_ a:value() ** _ {a})? {
-            let c = if let Ok(k) = f.parse() {
-                Callable::Keyword(k)
-            } else {
-                Callable::Function(f.to_string())
-            };
-            Command { callable: c, args: args.unwrap_or_default() }
-        }
-        / ">>" { Command { callable: Callable::Keyword(Keyword::ShiftRight), args: vec![] } }
-        / "<<" { Command { callable: Callable::Keyword(Keyword::ShiftLeft), args: vec![] } }
+        = e:expression() { Command::Expression(e) }
+        / ">>" { Command::ShiftRight }
+        / "<<" { Command::ShiftLeft }
 
-    pub rule program() -> Vec<Command>
-        = command() ** "\n"
+    pub rule user_input() -> UserInput
+        = "." f:function_call() { UserInput::Directive(f.0, f.1) }
+        / c:command() { UserInput::Command(c) }
   }
 }
-pub use pi_parser::command as parse_command;
-pub use pi_parser::program as parse_program;
+pub use pi_parser::user_input;
 
-#[derive(Debug)]
-pub enum Keyword {
-    ShiftRight,
+#[derive(Debug, PartialEq)]
+pub enum Expression {
+    This,
+    Literal(Value),
+    List(Vec<Expression>),
+    Dict(HashMap<String, Expression>),
+    FunctionCall(String, Vec<Expression>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Command {
     ShiftLeft,
-    Calc,
+    ShiftRight,
+    Expression(Expression),
 }
 
-#[derive(Debug)]
-pub enum Callable {
-    Keyword(Keyword),
-    Function(String),
+#[derive(Debug, PartialEq)]
+pub enum UserInput {
+    Command(Command),
+    Directive(String, Vec<Expression>),
 }
 
-#[derive(Debug)]
-pub struct Command {
-    pub callable: Callable,
-    pub args: Vec<Value>,
-}
+#[cfg(test)]
+mod test {
+    use super::*;
 
-impl std::str::FromStr for Keyword {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            ">>" => Ok(Keyword::ShiftRight),
-            "<<" => Ok(Keyword::ShiftLeft),
-            "calc" => Ok(Keyword::Calc),
-            _ => Err(()),
-        }
+    #[test]
+    fn test_basic() {
+        assert_eq!(
+            pi_parser::command("123"),
+            Ok(Command::Expression(Expression::Literal(Value::Number(123))))
+        );
+
+        assert_eq!(
+            pi_parser::command("\"hello\""),
+            Ok(Command::Expression(Expression::Literal(Value::String(
+                "hello".to_string()
+            ))))
+        );
+
+        assert_eq!(
+            pi_parser::command("[123]"),
+            Ok(Command::Expression(Expression::List(vec![
+                Expression::Literal(Value::Number(123))
+            ])))
+        );
+
+        assert_eq!(
+            pi_parser::command("{ \"key\": 123 }"),
+            Ok(Command::Expression(Expression::Dict(
+                vec![("key".to_string(), Expression::Literal(Value::Number(123)))]
+                    .into_iter()
+                    .collect()
+            )))
+        );
+
+        assert_eq!(
+            pi_parser::command("%"),
+            Ok(Command::Expression(Expression::This))
+        );
+
+        assert_eq!(
+            pi_parser::command("print"),
+            Ok(Command::Expression(Expression::FunctionCall(
+                "print".to_string(),
+                vec![]
+            )))
+        );
+
+        assert_eq!(
+            pi_parser::command("print 123"),
+            Ok(Command::Expression(Expression::FunctionCall(
+                "print".to_string(),
+                vec![Expression::Literal(Value::Number(123))]
+            )))
+        );
+
+        assert_eq!(pi_parser::command(">>"), Ok(Command::ShiftRight));
+
+        assert_eq!(pi_parser::command("<<"), Ok(Command::ShiftLeft));
+
+        assert_eq!(
+            pi_parser::user_input(".print"),
+            Ok(UserInput::Directive("print".to_string(), vec![]))
+        );
+
+        assert_eq!(
+            pi_parser::user_input(".print 123"),
+            Ok(UserInput::Directive(
+                "print".to_string(),
+                vec![Expression::Literal(Value::Number(123))]
+            ))
+        );
     }
 }
