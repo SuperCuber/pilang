@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::data::{Function, List, SValue, Value};
 use crate::parser::{Command, Expression};
@@ -16,14 +16,14 @@ struct Context {
 }
 
 pub struct Interpreter {
-    context: Arc<Context>,
+    context: Rc<Context>,
     program: Vec<ExecutedCommand>,
 }
 
 impl Interpreter {
     pub fn new(input: String) -> Self {
         Self {
-            context: Arc::new(Context {
+            context: Rc::new(Context {
                 functions: builtin::builtin_functions(),
             }),
             program: vec![ExecutedCommand {
@@ -57,7 +57,7 @@ impl Interpreter {
     }
 
     fn eval_expression(
-        context: Arc<Context>,
+        context: Rc<Context>,
         e: Expression,
         this: SValue,
     ) -> error::Result<SValue> {

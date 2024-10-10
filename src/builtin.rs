@@ -106,10 +106,9 @@ impl From<serde_json::Value> for Value {
                 let vals: Vec<_> = a
                     .into_iter()
                     .map(|v| SValue::new(Value::from(v)))
-                    .collect::<Vec<_>>()
-                    .into();
+                    .collect::<Vec<_>>();
                 Value::List(crate::data::List {
-                    elements: RefCell::new(vals),
+                    elements: vals.into(),
                     rest: None.into(),
                 })
             }

@@ -1,9 +1,9 @@
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::Deref, sync::Arc};
+use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
 
 use crate::error;
 
 /// Shared value
-pub type SValue = Arc<Value>;
+pub type SValue = Rc<Value>;
 
 #[derive(Debug, PartialEq)]
 pub enum Value {

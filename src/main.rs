@@ -1,8 +1,6 @@
 // TODO
 #![allow(dead_code)]
 #![allow(unused_imports)]
-// TODO: parallelize that shit
-#![allow(clippy::arc_with_non_send_sync)]
 
 use anyhow::{Context, Result};
 use interpreter::Interpreter;
