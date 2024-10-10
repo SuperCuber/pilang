@@ -15,6 +15,7 @@ pub enum Value {
     String(String),
     List(List),
     Dict(Dict),
+    Function(Function),
 }
 
 type LazyRest<T> = RefCell<Option<Box<dyn Iterator<Item = error::Result<T>>>>>;
@@ -98,14 +99,10 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Int(n) => write!(f, "{}", n),
             Value::Float(n) => write!(f, "{}", n),
-            // TODO: hide the rest if its too much
-            Value::String(s) => write!(f, "{:?}", s),
-            Value::List(l) => {
-                write!(f, "{}", l)
-            }
-            Value::Dict(m) => {
-                write!(f, "{}", m)
-            }
+            Value::String(s) => write!(f, "{:?}", s), // TODO: hide the rest if its too much
+            Value::List(l) => write!(f, "{}", l),
+            Value::Dict(m) => write!(f, "{}", m),
+            Value::Function(func) => write!(f, "<builtin function {}>", func.name),
         }
     }
 }
@@ -150,6 +147,16 @@ impl Dict {
     pub fn get(&self, key: &str) -> error::Result<Option<SValue>> {
         self.realize_look_for(key)?;
         Ok(self.elements.borrow().get(key).cloned())
+    }
+
+    pub fn get_first(&self) -> error::Result<Option<(String, SValue)>> {
+        self.realize_n(1)?;
+        Ok(self
+            .elements
+            .borrow()
+            .iter()
+            .next()
+            .map(|(k, v)| (k.clone(), v.clone())))
     }
 
     /// Expand to size n
@@ -234,5 +241,20 @@ impl std::fmt::Display for Dict {
 impl std::cmp::PartialEq for Dict {
     fn eq(&self, other: &Self) -> bool {
         self.elements == other.elements
+    }
+}
+
+impl std::fmt::Debug for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Function")
+            .field("name", &self.name)
+            .field("arities", &self.arities)
+            .finish()
+    }
+}
+
+impl std::cmp::PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
     }
 }

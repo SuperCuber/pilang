@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -7,64 +8,103 @@ use crate::parser::{Command, Expression};
 use crate::{builtin, error};
 
 pub struct Interpreter {
-    context: Rc<Context>,
+    settings: Settings,
     program: Program,
 }
 
-struct Context {
-    functions: HashMap<String, Function>,
-}
+struct Settings {}
 
-struct Program(SValue, Vec<ExecutedCommand>);
+struct Program {
+    /// The initial value of the program
+    this: SValue,
+    /// The initial scope of the program
+    scope: Scope,
+    /// The commands that have been executed so far, that can modify scope and value
+    commands: Vec<ExecutedCommand>,
+}
 
 enum ExecutedCommand {
     /// A simple expression that replaces the current value
-    Expression { expr: Expression, result: SValue },
+    Expression {
+        expr: Expression,
+
+        scope: Scope,
+        result: SValue,
+    },
     /// An incompelte shift-right that is in progress
     ShiftRight {
         name: String,
         kv: Option<(String, String)>,
+
         program: Program,
     },
     /// A finished shift-right that has replaced the current value
     ShiftLeft {
         kv: Option<(Expression, Expression)>,
+
+        scope: Scope,
         result: SValue,
     },
 }
 
+#[derive(Clone)]
+pub struct Scope(Rc<HashMap<String, SValue>>);
+
 impl Interpreter {
     pub fn new(input: String) -> Self {
         Self {
-            context: Rc::new(Context {
-                functions: builtin::builtin_functions(),
-            }),
-            program: Program(SValue::new(Value::String(input)), vec![]),
+            settings: Settings {},
+            program: Program {
+                this: SValue::new(Value::String(input)),
+                scope: Scope(Rc::new(builtin::builtin_functions())),
+                commands: vec![],
+            },
         }
     }
 
     pub fn run(&mut self, command: Command) -> error::Result<()> {
         let this = self.value();
+        let mut scope = self.scope();
         match command.clone() {
             Command::Expression(e) => {
-                let result = Interpreter::eval_expression(self.context.clone(), e.clone(), this)?;
-                self.program
-                    .1
-                    .push(ExecutedCommand::Expression { expr: e, result });
+                let result = Interpreter::eval_expression(scope.clone(), e.clone(), this)?;
+                self.program.commands.push(ExecutedCommand::Expression {
+                    expr: e,
+                    scope,
+                    result,
+                });
             }
             Command::ShiftRight(kv) => match (&*this, kv) {
                 (Value::List(l), None) => {
-                    let name = "list".to_string();
                     let first = l.get(0)?.ok_or(error::Error::ShiftRightEmptySequence)?;
-                    let program = Program(first, vec![]);
-                    self.program.1.push(ExecutedCommand::ShiftRight {
-                        name,
+                    self.program.commands.push(ExecutedCommand::ShiftRight {
+                        name: "list".to_string(),
                         kv: None,
-                        program,
+                        program: Program {
+                            this: first,
+                            scope,
+                            commands: vec![],
+                        },
+                    });
+                }
+                (Value::Dict(d), Some(kv)) => {
+                    let first = d
+                        .get_first()?
+                        .ok_or(error::Error::ShiftRightEmptySequence)?;
+                    let scope_inner = Rc::make_mut(&mut scope.0);
+                    scope_inner.insert(kv.0.clone(), SValue::new(Value::String(first.0)));
+                    scope_inner.insert(kv.1.clone(), first.1);
+                    self.program.commands.push(ExecutedCommand::ShiftRight {
+                        name: "dict".to_string(),
+                        kv: Some(kv),
+                        program: Program {
+                            this: SValue::new(Value::Null),
+                            scope,
+                            commands: vec![],
+                        },
                     });
                 }
                 (Value::Dict(_), None) => todo!(),
-                (Value::Dict(_), Some(kv)) => todo!(),
                 _ => todo!(),
             },
             Command::ShiftLeft(kv) => todo!(),
@@ -73,30 +113,53 @@ impl Interpreter {
     }
 
     pub fn undo(&mut self) {
-        self.program.1.pop();
+        self.program.commands.pop();
     }
 
     pub fn value(&self) -> SValue {
         self.program.value()
     }
 
+    pub fn scope(&self) -> Scope {
+        self.program.scope()
+    }
+
     pub fn status(&self) -> Vec<String> {
         self.program.status()
     }
 
-    fn eval_expression(context: Rc<Context>, e: Expression, this: SValue) -> error::Result<SValue> {
+    fn eval_expression(scope: Scope, e: Expression, this: SValue) -> error::Result<SValue> {
         Ok(match e {
             Expression::This => this.clone(),
             Expression::Literal(l) => l,
             Expression::List(l) => SValue::new(Value::List(List {
                 elements: RefCell::new(vec![]),
                 rest: RefCell::new(Some(Box::new(l.into_iter().map(move |e| {
-                    Interpreter::eval_expression(context.clone(), e, this.clone())
+                    Interpreter::eval_expression(scope.clone(), e, this.clone())
                 })))),
             })),
             Expression::Dict(_) => todo!(),
+            Expression::Identifier(name) => {
+                if let Some(value) = scope.0.get(&name) {
+                    if let Value::Function(Function { name: name2, .. }) = value.borrow() {
+                        assert_eq!(&name, name2);
+                        Interpreter::eval_expression(
+                            scope.clone(),
+                            Expression::FunctionCall(name, vec![]),
+                            this.clone(),
+                        )?
+                    } else {
+                        value.clone()
+                    }
+                } else {
+                    return Err(error::Error::VariableNotFound(name));
+                }
+            }
             Expression::FunctionCall(name, args) => {
-                let Some(f) = context.functions.get(&name) else {
+                let Some(f) = scope.0.get(&name) else {
+                    return Err(error::Error::FunctionNotFound(name));
+                };
+                let Value::Function(f) = f.borrow() else {
                     return Err(error::Error::FunctionNotFound(name));
                 };
                 let arity = args.len();
@@ -118,7 +181,7 @@ impl Interpreter {
                 let args = prefix
                     .into_iter()
                     .chain(args.into_iter())
-                    .map(|e| Interpreter::eval_expression(context.clone(), e, this.clone()))
+                    .map(|e| Interpreter::eval_expression(scope.clone(), e, this.clone()))
                     .collect::<error::Result<Vec<_>>>()?;
 
                 (f.implementation)(args)?
@@ -129,24 +192,36 @@ impl Interpreter {
 
 impl Program {
     fn value(&self) -> SValue {
-        if let Some(command) = self.1.last() {
+        if let Some(command) = self.commands.last() {
             match command {
                 ExecutedCommand::Expression { result, .. } => result.clone(),
                 ExecutedCommand::ShiftRight { program, .. } => program.value(),
                 ExecutedCommand::ShiftLeft { result, .. } => result.clone(),
             }
         } else {
-            self.0.clone()
+            self.this.clone()
+        }
+    }
+
+    fn scope(&self) -> Scope {
+        if let Some(command) = self.commands.last() {
+            match command {
+                ExecutedCommand::Expression { scope, .. } => scope.clone(),
+                ExecutedCommand::ShiftRight { program, .. } => program.scope(),
+                ExecutedCommand::ShiftLeft { scope, .. } => scope.clone(),
+            }
+        } else {
+            self.scope.clone()
         }
     }
 
     fn status(&self) -> Vec<String> {
-        let Some(ExecutedCommand::ShiftRight { name, kv, program }) = self.1.last() else {
+        let Some(ExecutedCommand::ShiftRight { name, kv, program }) = self.commands.last() else {
             return vec![];
         };
         let mut status = program.status();
 
-        let mut part = format!("{name}");
+        let mut part = name.to_string();
         if let Some((k, v)) = kv {
             part.push_str(&format!(" {k}: {v}"));
         }

@@ -9,5 +9,7 @@ pub enum Error {
     BuiltinFunctionError(String),
     #[error("Ran >> on an empty sequence")]
     ShiftRightEmptySequence,
+    #[error("Variable {0} not found")]
+    VariableNotFound(String),
 }
 pub type Result<T> = std::result::Result<T, Error>;

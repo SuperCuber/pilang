@@ -5,7 +5,7 @@ use crate::{
     error,
 };
 
-pub fn builtin_functions() -> HashMap<String, Function> {
+pub fn builtin_functions() -> HashMap<String, SValue> {
     let mut functions = HashMap::new();
     functions.insert(
         "json".to_string(),
@@ -25,6 +25,9 @@ pub fn builtin_functions() -> HashMap<String, Function> {
     );
 
     functions
+        .into_iter()
+        .map(|(k, v)| (k, SValue::new(Value::Function(v))))
+        .collect()
 }
 
 fn get(mut args: Vec<SValue>) -> error::Result<SValue> {

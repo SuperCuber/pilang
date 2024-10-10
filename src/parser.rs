@@ -44,6 +44,7 @@ peg::parser! {
       / l:literal() { Expression::Literal(SValue::new(l)) }
       / l:list() { Expression::List(l) }
       / d:dict() { Expression::Dict(d) }
+      / i:$(ident()) !_ { Expression::Identifier(i.into()) }
       / f:function_call() { Expression::FunctionCall(f.0, f.1) }
 
     pub rule command() -> Command
@@ -68,6 +69,7 @@ pub enum Expression {
     Literal(SValue),
     List(Vec<Expression>),
     Dict(HashMap<String, Expression>),
+    Identifier(String),
     FunctionCall(String, Vec<Expression>),
 }
 
