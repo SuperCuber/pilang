@@ -6,18 +6,31 @@ use crate::data::{Function, List, SValue, Value};
 use crate::parser::{Command, Expression};
 use crate::{builtin, error};
 
-struct ExecutedCommand {
-    command: Command,
-    result: SValue,
+pub struct Interpreter {
+    context: Rc<Context>,
+    program: Program,
 }
 
 struct Context {
     functions: HashMap<String, Function>,
 }
 
-pub struct Interpreter {
-    context: Rc<Context>,
-    program: Vec<ExecutedCommand>,
+struct Program(SValue, Vec<ExecutedCommand>);
+
+enum ExecutedCommand {
+    /// A simple expression that replaces the current value
+    Expression { expr: Expression, result: SValue },
+    /// An incompelte shift-right that is in progress
+    ShiftRight {
+        name: String,
+        kv: Option<(String, String)>,
+        program: Program,
+    },
+    /// A finished shift-right that has replaced the current value
+    ShiftLeft {
+        kv: Option<(Expression, Expression)>,
+        result: SValue,
+    },
 }
 
 impl Interpreter {
@@ -26,10 +39,7 @@ impl Interpreter {
             context: Rc::new(Context {
                 functions: builtin::builtin_functions(),
             }),
-            program: vec![ExecutedCommand {
-                command: Command::Expression(Expression::This),
-                result: SValue::new(Value::String(input)),
-            }],
+            program: Program(SValue::new(Value::String(input)), vec![]),
         }
     }
 
@@ -37,30 +47,44 @@ impl Interpreter {
         let this = self.value();
         match command.clone() {
             Command::Expression(e) => {
-                let result = Interpreter::eval_expression(self.context.clone(), e, this)?;
-                self.program.push(ExecutedCommand { command, result });
+                let result = Interpreter::eval_expression(self.context.clone(), e.clone(), this)?;
+                self.program
+                    .1
+                    .push(ExecutedCommand::Expression { expr: e, result });
             }
-            Command::ShiftRight(None) => todo!(),
-            Command::ShiftLeft(None) => todo!(),
-            Command::ShiftRight(Some((_, _))) => todo!(),
-            Command::ShiftLeft(Some((_, _))) => todo!(),
+            Command::ShiftRight(kv) => match (&*this, kv) {
+                (Value::List(l), None) => {
+                    let name = "list".to_string();
+                    let first = l.get(0)?.ok_or(error::Error::ShiftRightEmptySequence)?;
+                    let program = Program(first, vec![]);
+                    self.program.1.push(ExecutedCommand::ShiftRight {
+                        name,
+                        kv: None,
+                        program,
+                    });
+                }
+                (Value::Dict(_), None) => todo!(),
+                (Value::Dict(_), Some(kv)) => todo!(),
+                _ => todo!(),
+            },
+            Command::ShiftLeft(kv) => todo!(),
         }
         Ok(())
     }
 
     pub fn undo(&mut self) {
-        self.program.pop();
+        self.program.1.pop();
     }
 
     pub fn value(&self) -> SValue {
-        self.program.last().unwrap().result.clone()
+        self.program.value()
     }
 
-    fn eval_expression(
-        context: Rc<Context>,
-        e: Expression,
-        this: SValue,
-    ) -> error::Result<SValue> {
+    pub fn status(&self) -> Vec<String> {
+        self.program.status()
+    }
+
+    fn eval_expression(context: Rc<Context>, e: Expression, this: SValue) -> error::Result<SValue> {
         Ok(match e {
             Expression::This => this.clone(),
             Expression::Literal(l) => l,
@@ -100,6 +124,35 @@ impl Interpreter {
                 (f.implementation)(args)?
             }
         })
+    }
+}
+
+impl Program {
+    fn value(&self) -> SValue {
+        if let Some(command) = self.1.last() {
+            match command {
+                ExecutedCommand::Expression { result, .. } => result.clone(),
+                ExecutedCommand::ShiftRight { program, .. } => program.value(),
+                ExecutedCommand::ShiftLeft { result, .. } => result.clone(),
+            }
+        } else {
+            self.0.clone()
+        }
+    }
+
+    fn status(&self) -> Vec<String> {
+        let Some(ExecutedCommand::ShiftRight { name, kv, program }) = self.1.last() else {
+            return vec![];
+        };
+        let mut status = program.status();
+
+        let mut part = format!("{name}");
+        if let Some((k, v)) = kv {
+            part.push_str(&format!(" {k}: {v}"));
+        }
+
+        status.push(part);
+        status
     }
 }
 

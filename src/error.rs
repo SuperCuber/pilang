@@ -7,5 +7,7 @@ pub enum Error {
     InvalidArity(String, usize, Vec<usize>),
     #[error("{0}")]
     BuiltinFunctionError(String),
+    #[error("Ran >> on an empty sequence")]
+    ShiftRightEmptySequence,
 }
 pub type Result<T> = std::result::Result<T, Error>;

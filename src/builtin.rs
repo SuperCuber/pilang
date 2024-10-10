@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
     data::{Function, SValue, Value},

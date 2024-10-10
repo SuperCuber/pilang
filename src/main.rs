@@ -1,6 +1,5 @@
 // TODO
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
 use anyhow::{Context, Result};
 use interpreter::Interpreter;
@@ -17,7 +16,8 @@ fn main() -> Result<()> {
 }
 
 fn run_prompt() -> Result<()> {
-    let mut interpreter = Interpreter::new("{\"a\": 1, \"b\": 2.0, \"c\": [1,2,3], \"d\": null}".into());
+    let mut interpreter =
+        Interpreter::new("{\"a\": 1, \"b\": 2.0, \"c\": [1,2,3], \"d\": null}".into());
 
     let stdin = stdin();
     let stdin = stdin.lock();
@@ -38,13 +38,14 @@ fn run_prompt() -> Result<()> {
 
 fn prompt(interpreter: &Interpreter) {
     // TODO: print interpreter status (current chain of >>)
-    // interpreter.status();
+    let status = interpreter.status();
     let val = interpreter.value();
     if let Err(err) = val.sample() {
         eprintln!("Error: {:#?}", err);
     };
+    println!("{}", status.join(" >> "));
     println!("{val}");
-    print!("> ");
+    print!("$> ");
     stdout().flush().unwrap();
 }
 
