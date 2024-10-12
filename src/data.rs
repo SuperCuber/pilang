@@ -51,6 +51,20 @@ impl Value {
             _ => Ok(()),
         }
     }
+
+    fn as_dict(&self) -> Option<&Dict> {
+        match self {
+            Value::Dict(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    fn as_list(&self) -> Option<&List> {
+        match self {
+            Value::List(l) => Some(l),
+            _ => None,
+        }
+    }
 }
 
 impl List {
@@ -91,31 +105,26 @@ impl List {
 
         Ok(())
     }
-}
 
-impl<'a> IntoIterator for &'a List {
-    type Item = error::Result<SValue>;
-    type IntoIter = ListIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
+    pub fn into_iter(this: SValue) -> ListIter {
         ListIter {
-            list: self,
+            list: this,
             index: 0,
         }
     }
 }
 
-pub struct ListIter<'a> {
-    list: &'a List,
+pub struct ListIter {
+    list: SValue,
     index: usize,
 }
 
-impl Iterator for ListIter<'_> {
+impl Iterator for ListIter {
     type Item = error::Result<SValue>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.index += 1;
-        self.list.get(self.index - 1).transpose()
+        self.list.as_list().unwrap().get(self.index - 1).transpose()
     }
 }
 
@@ -243,6 +252,13 @@ impl Dict {
         }
         Ok(())
     }
+
+    pub fn into_iter(this: SValue) -> DictIter {
+        DictIter {
+            dict: this,
+            index: 0,
+        }
+    }
 }
 
 impl std::fmt::Debug for Dict {
@@ -281,29 +297,21 @@ impl std::cmp::PartialEq for Dict {
     }
 }
 
-impl<'a> IntoIterator for &'a Dict {
-    type Item = error::Result<(String, SValue)>;
-    type IntoIter = DictIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        DictIter {
-            dict: self,
-            index: 0,
-        }
-    }
-}
-
-pub struct DictIter<'a> {
-    dict: &'a Dict,
+pub struct DictIter {
+    dict: SValue,
     index: usize,
 }
 
-impl<'a> Iterator for DictIter<'a> {
+impl Iterator for DictIter {
     type Item = error::Result<(String, SValue)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.index += 1;
-        self.dict.get_nth(self.index - 1).transpose()
+        self.dict
+            .as_dict()
+            .unwrap()
+            .get_nth(self.index - 1)
+            .transpose()
     }
 }
 

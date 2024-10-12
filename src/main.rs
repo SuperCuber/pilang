@@ -1,5 +1,6 @@
 // TODO
 #![allow(dead_code)]
+#![allow(unused_variables)]
 
 use anyhow::{Context, Result};
 use interpreter::Interpreter;
