@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use std::collections::HashMap;
 
 use crate::{
@@ -116,7 +118,7 @@ impl From<serde_json::Value> for Value {
                 })
             }
             serde_json::Value::Object(o) => {
-                let vals: HashMap<_, _> = o
+                let vals: IndexMap<_, _> = o
                     .into_iter()
                     .map(|(k, v)| (k, SValue::new(Value::from(v))))
                     .collect();

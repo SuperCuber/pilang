@@ -1,4 +1,5 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use indexmap::IndexMap;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::error;
 
@@ -28,7 +29,7 @@ pub struct List {
 
 /// Lazily evaluated dict
 pub struct Dict {
-    pub elements: RefCell<HashMap<String, SValue>>,
+    pub elements: RefCell<IndexMap<String, SValue>>,
     pub rest: LazyRest<(String, SValue)>,
 }
 
@@ -92,6 +93,32 @@ impl List {
     }
 }
 
+impl<'a> IntoIterator for &'a List {
+    type Item = error::Result<SValue>;
+    type IntoIter = ListIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ListIter {
+            list: self,
+            index: 0,
+        }
+    }
+}
+
+pub struct ListIter<'a> {
+    list: &'a List,
+    index: usize,
+}
+
+impl Iterator for ListIter<'_> {
+    type Item = error::Result<SValue>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.index += 1;
+        self.list.get(self.index - 1).transpose()
+    }
+}
+
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -147,6 +174,16 @@ impl Dict {
     pub fn get(&self, key: &str) -> error::Result<Option<SValue>> {
         self.realize_look_for(key)?;
         Ok(self.elements.borrow().get(key).cloned())
+    }
+
+    fn get_nth(&self, n: usize) -> error::Result<Option<(String, SValue)>> {
+        self.realize_n(n + 1)?;
+        self.elements
+            .borrow()
+            // IndexMap
+            .get_index(n)
+            .map(|(k, v)| Ok((k.clone(), v.clone())))
+            .transpose()
     }
 
     pub fn get_first(&self) -> error::Result<Option<(String, SValue)>> {
@@ -241,6 +278,32 @@ impl std::fmt::Display for Dict {
 impl std::cmp::PartialEq for Dict {
     fn eq(&self, other: &Self) -> bool {
         self.elements == other.elements
+    }
+}
+
+impl<'a> IntoIterator for &'a Dict {
+    type Item = error::Result<(String, SValue)>;
+    type IntoIter = DictIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DictIter {
+            dict: self,
+            index: 0,
+        }
+    }
+}
+
+pub struct DictIter<'a> {
+    dict: &'a Dict,
+    index: usize,
+}
+
+impl<'a> Iterator for DictIter<'a> {
+    type Item = error::Result<(String, SValue)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.index += 1;
+        self.dict.get_nth(self.index - 1).transpose()
     }
 }
 
