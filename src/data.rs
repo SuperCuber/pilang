@@ -46,20 +46,31 @@ impl Value {
     pub fn sample(&self) -> error::Result<()> {
         // TODO: replace simple "3" heuristic with something better. maybe recursive "size/complexity estimation"
         match self {
-            Value::List(l) => l.realize_n(3),
-            Value::Dict(m) => m.realize_n(3),
-            _ => Ok(()),
+            Value::List(l) => {
+                l.realize_n(3)?;
+                for e in l.elements.borrow().iter() {
+                    e.sample()?;
+                }
+            }
+            Value::Dict(m) => {
+                m.realize_n(3)?;
+                for e in m.elements.borrow().values() {
+                    e.sample()?;
+                }
+            }
+            _ => (),
         }
+        Ok(())
     }
 
-    fn as_dict(&self) -> Option<&Dict> {
+    pub(crate) fn as_dict(&self) -> Option<&Dict> {
         match self {
             Value::Dict(d) => Some(d),
             _ => None,
         }
     }
 
-    fn as_list(&self) -> Option<&List> {
+    pub(crate) fn as_list(&self) -> Option<&List> {
         match self {
             Value::List(l) => Some(l),
             _ => None,
