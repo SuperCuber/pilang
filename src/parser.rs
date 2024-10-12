@@ -150,9 +150,8 @@ mod test {
 
         assert_eq!(
             pi_parser::command("print"),
-            Ok(Command::Expression(Expression::FunctionCall(
-                "print".to_string(),
-                vec![]
+            Ok(Command::Expression(Expression::Identifier(
+                "print".to_string()
             )))
         );
 
