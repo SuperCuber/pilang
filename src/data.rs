@@ -63,6 +63,15 @@ impl Value {
         Ok(())
     }
 
+    pub fn realize(&self) -> error::Result<()> {
+        match self {
+            Value::List(l) => l.realize_all()?,
+            Value::Dict(m) => m.realize_all()?,
+            _ => (),
+        }
+        Ok(())
+    }
+
     pub(crate) fn as_dict(&self) -> Option<&Dict> {
         match self {
             Value::Dict(d) => Some(d),
@@ -73,6 +82,28 @@ impl Value {
     pub(crate) fn as_list(&self) -> Option<&List> {
         match self {
             Value::List(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_number(&self) -> Option<f64> {
+        match self {
+            Value::Int(n) => Some(*n as f64),
+            Value::Float(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_string(&self) -> Option<&str> {
+        match self {
+            Value::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(b) => Some(*b),
             _ => None,
         }
     }

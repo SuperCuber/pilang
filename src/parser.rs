@@ -38,14 +38,28 @@ peg::parser! {
     rule function_call() -> (String, Vec<Expression>)
       = f:$(ident()) args:(_ a:expression() ** _ {a})? { (f.to_string(), args.unwrap_or_default()) }
 
-    rule expression() -> Expression
+    rule atom() -> Expression
       = "%" { Expression::This }
-      / p:parens() { p }
       / l:literal() { Expression::Literal(SValue::new(l)) }
       / l:list() { Expression::List(l) }
       / d:dict() { Expression::Dict(d) }
       / i:$(ident()) !_ { Expression::Identifier(i.into()) }
       / f:function_call() { Expression::FunctionCall(f.0, f.1) }
+
+    rule expression() -> Expression = precedence!{
+        x:(@) _? "+" _? y:@ { Expression::Plus(Box::new(x), Box::new(y)) }
+        x:(@) _? "-" _? y:@ { Expression::Minus(Box::new(x), Box::new(y)) }
+              "-" _? v:@ { Expression::UnaryMinus(Box::new(v)) }
+        --
+        x:(@) _? "*" _? y:@ { Expression::Multiply(Box::new(x), Box::new(y)) }
+        x:(@) _? "/" _? y:@ { Expression::Divide(Box::new(x), Box::new(y)) }
+        --
+        x:(@) _ "and" _ y:@ { Expression::And(Box::new(x), Box::new(y)) }
+        x:(@) _ "or" _ y:@ { Expression::Or(Box::new(x), Box::new(y)) }
+        --
+        "(" _? v:expression() _? ")" { v }
+        n:atom() {n}
+    }
 
     pub rule command() -> Command
         = e:expression() { Command::Expression(e) }
@@ -67,8 +81,18 @@ pub use pi_parser::*;
 pub enum Expression {
     This,
     Literal(SValue),
+
+    Plus(Box<Expression>, Box<Expression>),
+    Minus(Box<Expression>, Box<Expression>),
+    UnaryMinus(Box<Expression>),
+    Multiply(Box<Expression>, Box<Expression>),
+    Divide(Box<Expression>, Box<Expression>),
+    And(Box<Expression>, Box<Expression>),
+    Or(Box<Expression>, Box<Expression>),
+
     List(Vec<Expression>),
     Dict(HashMap<String, Expression>),
+
     Identifier(String),
     FunctionCall(String, Vec<Expression>),
 }

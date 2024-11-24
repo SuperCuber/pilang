@@ -9,7 +9,13 @@ pub enum Error {
     BuiltinFunctionError(String),
     #[error("Ran >> on an empty sequence")]
     ShiftRightEmptySequence,
+    #[error("Ran << while not in a shift")]
+    ShiftLeftNotInShift,
     #[error("Variable {0} not found")]
     VariableNotFound(String),
+    #[error("Invalid type, expected {0}")]
+    InvalidType(&'static str),
+    #[error("Invalid type, expected one of {0:?}")]
+    InvalidTypes(&'static [&'static str]),
 }
 pub type Result<T> = std::result::Result<T, Error>;

@@ -25,6 +25,14 @@ pub fn builtin_functions() -> HashMap<String, SValue> {
             implementation: Box::new(get),
         },
     );
+    functions.insert(
+        "assoc".to_string(),
+        Function {
+            name: "assoc".to_string(),
+            arities: vec![3],
+            implementation: Box::new(assoc),
+        },
+    );
 
     functions
         .into_iter()
@@ -69,6 +77,57 @@ fn get(mut args: Vec<SValue>) -> error::Result<SValue> {
         }
         _ => Err(error::Error::BuiltinFunctionError(
             "get function expects a string or an integer as the second argument".to_string(),
+        )),
+    }
+}
+
+fn assoc(mut args: Vec<SValue>) -> error::Result<SValue> {
+    assert!(
+        args.len() == 3,
+        "assoc function expects exactly three arguments"
+    );
+    let value = args.remove(2);
+    let key = args.remove(1);
+    let container = args.remove(0);
+
+    match &*key {
+        Value::String(s) => {
+            let Value::Dict(dict) = &*container else {
+                return Err(error::Error::BuiltinFunctionError(format!(
+                    "assoc function expects a dict as the first argument, got {container}",
+                )));
+            };
+            dict.realize_all()?;
+            // lazy_rest is None, so we can just copy the elements
+            let mut elements = dict.elements.borrow().clone();
+            elements.insert(s.clone(), value);
+            Ok(SValue::new(Value::Dict(crate::data::Dict {
+                elements: elements.into(),
+                rest: None.into(),
+            })))
+        }
+        Value::Int(n) => {
+            let Value::List(list) = &*container else {
+                return Err(error::Error::BuiltinFunctionError(format!(
+                    "assoc function expects a list as the first argument, got {container}",
+                )));
+            };
+            list.realize_all()?;
+            let mut elements = list.elements.borrow().clone();
+            if let Some(e) = elements.get_mut(*n as usize) {
+                *e = value;
+            } else {
+                return Err(error::Error::BuiltinFunctionError(format!(
+                    "index out of bounds: {n}",
+                )));
+            }
+            Ok(SValue::new(Value::List(crate::data::List {
+                elements: elements.into(),
+                rest: None.into(),
+            })))
+        }
+        _ => Err(error::Error::BuiltinFunctionError(
+            "assoc function expects a string or an integer as the second argument".to_string(),
         )),
     }
 }

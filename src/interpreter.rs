@@ -123,7 +123,7 @@ impl Interpreter {
                     commands,
                 } = self.program.clone()
                 else {
-                    todo!("not open program when shifting left")
+                    return Err(error::Error::ShiftLeftNotInShift);
                 };
                 // "this" before that was the preview of the first element,
                 // now we care about the whole container
@@ -224,11 +224,69 @@ impl Interpreter {
         Ok(match e {
             Expression::This => this.clone(),
             Expression::Literal(l) => l,
+
+            Expression::Plus(x, y) => {
+                match eval_number_pair(this.clone(), scope.clone(), *x.clone(), *y.clone()) {
+                    Ok((x, y)) => SValue::new(Value::Float(x + y)),
+                    Err(_) => {
+                        let x = Interpreter::eval_expression(scope.clone(), *x, this.clone())?;
+                        let x = x
+                            .as_string()
+                            .ok_or(error::Error::InvalidTypes(&["string", "number"]))?;
+                        let y = Interpreter::eval_expression(scope.clone(), *y, this.clone())?;
+                        let y = y
+                            .as_string()
+                            .ok_or(error::Error::InvalidTypes(&["string", "number"]))?;
+                        SValue::new(Value::String(format!("{}{}", x, y)))
+                    }
+                }
+            }
+            Expression::Minus(x, y) => {
+                let (x, y) = eval_number_pair(this.clone(), scope.clone(), *x, *y)?;
+                SValue::new(Value::Float(x - y))
+            }
+            Expression::UnaryMinus(x) => {
+                let x = Interpreter::eval_expression(scope.clone(), *x, this.clone())?
+                    .as_number()
+                    .ok_or(error::Error::InvalidType("number"))?;
+                SValue::new(Value::Float(-x))
+            }
+            Expression::Multiply(x, y) => {
+                let (x, y) = eval_number_pair(this.clone(), scope.clone(), *x, *y)?;
+                SValue::new(Value::Float(x * y))
+            }
+            Expression::Divide(x, y) => {
+                let (x, y) = eval_number_pair(this.clone(), scope.clone(), *x, *y)?;
+                SValue::new(Value::Float(x / y))
+            }
+            Expression::And(x, y) => {
+                let x = Interpreter::eval_expression(scope.clone(), *x, this.clone())?
+                    .as_bool()
+                    .ok_or(error::Error::InvalidType("boolean"))?;
+                if x {
+                    Interpreter::eval_expression(scope.clone(), *y, this.clone())?
+                } else {
+                    SValue::new(Value::Bool(false))
+                }
+            }
+            Expression::Or(x, y) => {
+                let x = Interpreter::eval_expression(scope.clone(), *x, this.clone())?
+                    .as_bool()
+                    .ok_or(error::Error::InvalidType("boolean"))?;
+                if x {
+                    SValue::new(Value::Bool(true))
+                } else {
+                    Interpreter::eval_expression(scope.clone(), *y, this.clone())?
+                }
+            }
+
             Expression::List(l) => SValue::new(Value::List(List {
-                elements: RefCell::new(vec![]),
-                rest: RefCell::new(Some(Box::new(l.into_iter().map(move |e| {
-                    Interpreter::eval_expression(scope.clone(), e, this.clone())
-                })))),
+                elements: RefCell::new(
+                    l.into_iter()
+                        .map(move |e| Interpreter::eval_expression(scope.clone(), e, this.clone()))
+                        .collect::<Result<_, _>>()?,
+                ),
+                rest: RefCell::new(None),
             })),
             Expression::Dict(_) => todo!(),
             Expression::Identifier(name) => {
@@ -282,6 +340,22 @@ impl Interpreter {
     }
 }
 
+fn eval_number_pair(
+    this: SValue,
+    scope: Scope,
+    x: Expression,
+    y: Expression,
+) -> error::Result<(f64, f64)> {
+    Ok((
+        Interpreter::eval_expression(scope.clone(), x, this.clone())?
+            .as_number()
+            .ok_or(error::Error::InvalidType("number"))?,
+        Interpreter::eval_expression(scope.clone(), y, this.clone())?
+            .as_number()
+            .ok_or(error::Error::InvalidType("number"))?,
+    ))
+}
+
 impl Program {
     fn value(&self) -> SValue {
         let (initial, commands) = match self {
@@ -321,6 +395,8 @@ impl Program {
             Program::Closed { commands, .. } => commands,
             Program::Open { commands, .. } => commands,
         };
+        // TODO: undo just the shift-left by replacing self with the
+        // `commands` and history and stuff
         commands.pop();
     }
 

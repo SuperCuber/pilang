@@ -25,9 +25,11 @@ fn run_prompt() -> Result<()> {
     prompt(&interpreter);
     for line in stdin.lines() {
         if let Ok(line) = line {
-            if let Err(err) = run(line, &mut interpreter) {
-                eprintln!("Error: {:#?}", err);
-            };
+            match run(line, &mut interpreter) {
+                Ok(true) => {}
+                Ok(false) => break,
+                Err(err) => eprintln!("Error: {:#?}", err),
+            }
             prompt(&interpreter);
         } else {
             println!("End of input. Goodbye!");
@@ -38,7 +40,6 @@ fn run_prompt() -> Result<()> {
 }
 
 fn prompt(interpreter: &Interpreter) {
-    // TODO: print interpreter status (current chain of >>)
     let status = interpreter.status();
     let val = interpreter.value();
     if let Err(err) = val.sample() {
@@ -50,7 +51,7 @@ fn prompt(interpreter: &Interpreter) {
     stdout().flush().unwrap();
 }
 
-fn run(line: String, interpreter: &mut Interpreter) -> Result<()> {
+fn run(line: String, interpreter: &mut Interpreter) -> Result<bool> {
     let input = parser::user_input(&line)?;
     match input {
         parser::UserInput::Command(command) => {
@@ -58,9 +59,17 @@ fn run(line: String, interpreter: &mut Interpreter) -> Result<()> {
         }
         parser::UserInput::Directive(name, _) => match name.as_str() {
             "undo" | "u" => interpreter.undo(),
-            "exit" | "quit" | "q" => std::process::exit(0),
+            "exit" | "quit" | "q" => return Ok(false),
+            "done" | "d" => {
+                let val = interpreter.value();
+                if let Err(err) = val.realize() {
+                    eprintln!("Error: {:#?}", err);
+                };
+                println!("{val}");
+                return Ok(false);
+            }
             _ => eprintln!("Unknown directive `{}`", name),
         },
     }
-    Ok(())
+    Ok(true)
 }
