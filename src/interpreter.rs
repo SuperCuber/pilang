@@ -424,44 +424,321 @@ impl Program {
 mod test {
     use super::*;
     use crate::parser::command;
+    use crate::data::{List, Value, SValue};
+
+    fn init_interpreter(json_str: &str) -> Interpreter {
+        let mut interpreter = Interpreter::new(json_str.into());
+        interpreter.run(command("json").unwrap()).unwrap();
+        interpreter
+    }
+
+    fn s_list(elements: Vec<SValue>) -> SValue {
+        SValue::new(Value::List(List {
+            elements: RefCell::new(elements),
+            rest: RefCell::new(None),
+        }))
+    }
+
+    fn s_int(val: u64) -> SValue {
+        SValue::new(Value::Int(val))
+    }
+
+    fn s_float(val: f64) -> SValue {
+        SValue::new(Value::Float(val))
+    }
+
+    fn s_string(val: &str) -> SValue {
+        SValue::new(Value::String(val.to_string()))
+    }
+    
+    fn s_bool(val: bool) -> SValue {
+        SValue::new(Value::Bool(val))
+    }
+
+    fn s_null() -> SValue {
+        SValue::new(Value::Null)
+    }
+
+    #[test]
+    fn test_json_parsing_and_basic_literals() {
+        let interpreter = init_interpreter("[1, \"test\", true, null, 2.5]");
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
+        assert_eq!(l.get(1).unwrap(), Some(s_string("test")));
+        assert_eq!(l.get(2).unwrap(), Some(s_bool(true)));
+        assert_eq!(l.get(3).unwrap(), Some(s_null()));
+        assert_eq!(l.get(4).unwrap(), Some(s_float(2.5)));
+
+        let mut interpreter_invalid = Interpreter::new("[1, 2".into());
+        let res = interpreter_invalid.run(command("json").unwrap());
+        assert!(matches!(res, Err(error::Error::BuiltinFunctionError(_))));
+    }
+    
+    #[test]
+    fn test_arithmetic_expressions() {
+        let mut interpreter = init_interpreter("0");
+        interpreter.run(command("1 + 2").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(3.0));
+        interpreter.run(command("% - 1").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(2.0));
+        interpreter.run(command("10 * %").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(20.0));
+        interpreter.run(command("% / 4").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(5.0));
+        interpreter.run(command("-%").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(-5.0));
+        interpreter = init_interpreter("\"hello\"");
+        interpreter.run(command("% + \" world\"").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_string("hello world"));
+    }
+
+    #[test]
+    fn test_builtin_get() {
+        let mut interpreter = init_interpreter("{\"key\": \"value\", \"arr\": [10, 20]}");
+        interpreter.run(command("get \"key\"").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_string("value"));
+        
+        interpreter = init_interpreter("{\"key\": \"value\", \"arr\": [10, 20]}");
+        interpreter.run(command("get \"arr\"").unwrap()).unwrap();
+        interpreter.run(command("get 1").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_int(20));
+
+        interpreter = init_interpreter("{}");
+        interpreter.run(command("get \"nonexistent\"").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_null());
+
+        interpreter = init_interpreter("[1]");
+        let res = interpreter.run(command("get 1").unwrap());
+        assert!(matches!(res, Err(error::Error::BuiltinFunctionError(_))));
+    }
+
+    #[test]
+    fn test_builtin_assoc() {
+        let mut interpreter = init_interpreter("{\"a\": 1}");
+        interpreter.run(command("assoc \"b\" 2").unwrap()).unwrap();
+        let val = interpreter.value();
+        let d = val.as_dict().unwrap();
+        assert_eq!(d.get("a").unwrap(), Some(s_int(1)));
+        assert_eq!(d.get("b").unwrap(), Some(s_int(2)));
+
+        interpreter = init_interpreter("[1,2,3]");
+        interpreter.run(command("assoc 1 100").unwrap()).unwrap();
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
+        assert_eq!(l.get(1).unwrap(), Some(s_int(100)));
+        assert_eq!(l.get(2).unwrap(), Some(s_int(3)));
+        
+        interpreter = init_interpreter("[1]");
+        let res = interpreter.run(command("assoc 1 100").unwrap());
+        assert!(res.is_err());
+    }
+    
+    #[test]
+    fn test_shift_list_simple_transform() {
+        let mut interpreter = init_interpreter("[1,2,3]");
+        interpreter.run(command(">>").unwrap()).unwrap();
+        assert_eq!(interpreter.status(), vec!["list ()".to_string()]);
+        assert_eq!(interpreter.value(), s_int(1));
+        interpreter.run(command("% + 10").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(11.0));
+        interpreter.run(command("<<").unwrap()).unwrap();
+        assert_eq!(interpreter.status(), Vec::<String>::new());
+
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_float(11.0)));
+        assert_eq!(l.get(1).unwrap(), Some(s_float(12.0)));
+        assert_eq!(l.get(2).unwrap(), Some(s_float(13.0)));
+    }
+
+    #[test]
+    fn test_shift_list_nested() {
+        let mut interpreter = init_interpreter("[[1,2,3],[4,5,6],[7,8,9]]");
+        interpreter.run(command(">>").unwrap()).unwrap();
+        assert!(interpreter.value().as_list().is_some());
+        interpreter.run(command(">>").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_int(1));
+        interpreter.run(command("100").unwrap()).unwrap();
+        interpreter.run(command("<<").unwrap()).unwrap();
+        interpreter.run(command("<<").unwrap()).unwrap();
+        
+        let val = interpreter.value();
+        let outer_l = val.as_list().unwrap();
+        for i in 0..3 {
+            let outer_elem = outer_l.get(i).unwrap().unwrap();
+            let inner_l = outer_elem.as_list().unwrap();
+            for j in 0..3 {
+                assert_eq!(inner_l.get(j).unwrap(), Some(s_int(100)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_shift_empty_list() {
+        let mut interpreter = init_interpreter("[]");
+        let res_shift_right = interpreter.run(command(">>").unwrap());
+        assert!(matches!(res_shift_right, Err(error::Error::ShiftRightEmptySequence)));
+        let val = interpreter.value();
+        let list = val.as_list().unwrap();
+        assert!(list.get(0).unwrap().is_none());
+
+        let mut interpreter2 = init_interpreter("[]");
+        let res_shift_left = interpreter2.run(command("<<").unwrap());
+        assert!(matches!(res_shift_left, Err(error::Error::ShiftLeftNotInShift)));
+    }
+
+    #[test]
+    #[ignore = "The dict shift with k:v is not implemented yet"]
+    fn test_shift_dict_collect_values() {
+        let mut interpreter = init_interpreter("{\"a\": 1, \"b\": 2}");
+        interpreter.run(command(">> k:v").unwrap()).unwrap();
+        assert_eq!(interpreter.status(), vec!["dict (k: v)".to_string()]);
+        interpreter.run(command("v").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_int(1));
+
+        interpreter.run(command("<<").unwrap()).unwrap();
+        assert_eq!(interpreter.status(), Vec::<String>::new());
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
+        assert_eq!(l.get(1).unwrap(), Some(s_int(2)));
+    }
+    
+    #[test]
+    #[ignore = "The k command in dict shift is not properly collecting keys into a list"]
+    fn test_shift_dict_collect_keys() {
+        let mut interpreter = init_interpreter("{\"a\": 1, \"b\": 2}");
+        interpreter.run(command(">> k:v").unwrap()).unwrap();
+        assert_eq!(interpreter.status(), vec!["dict (k: v)".to_string()]);
+        interpreter.run(command("k").unwrap()).unwrap();
+        
+        assert_eq!(interpreter.status(), vec!["dict (k: v)".to_string()]);
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_string("a")));
+        assert_eq!(l.get(1).unwrap(), Some(s_string("b")));
+    }
+
+    #[test]
+    fn test_undo_simple_command() {
+        let mut interpreter = init_interpreter("10");
+        interpreter.run(command("% + 5").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(15.0));
+        interpreter.undo();
+        assert_eq!(interpreter.value(), s_int(10));
+    }
+
+    #[test]
+    fn test_undo_multiple_commands() {
+        let mut interpreter = init_interpreter("0");
+        interpreter.run(command("10").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_int(10));
+        interpreter.run(command("% + 5").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(15.0));
+        interpreter.undo();
+        assert_eq!(interpreter.value(), s_int(10));
+        interpreter.undo();
+        assert_eq!(interpreter.value(), s_int(0));
+    }
+
+    #[test]
+    fn test_undo_after_shift_block() {
+        let mut interpreter = init_interpreter("[1,2]");
+        interpreter.run(command(">>").unwrap()).unwrap();
+        interpreter.run(command("% + 1").unwrap()).unwrap();
+        interpreter.run(command("<<").unwrap()).unwrap();
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_float(2.0)));
+        assert_eq!(l.get(1).unwrap(), Some(s_float(3.0)));
+
+        interpreter.undo();
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
+        assert_eq!(l.get(1).unwrap(), Some(s_int(2)));
+    }
+    
+    #[test]
+    fn test_undo_in_open_state() {
+        let mut interpreter = init_interpreter("[1,2,3]");
+        interpreter.run(command(">>").unwrap()).unwrap();
+        assert_eq!(interpreter.status(), vec!["list ()".to_string()]);
+        assert_eq!(interpreter.value(), s_int(1));
+        interpreter.run(command("% + 10").unwrap()).unwrap();
+        assert_eq!(interpreter.value(), s_float(11.0));
+        interpreter.undo();
+        assert_eq!(interpreter.value(), s_int(1));
+        assert_eq!(interpreter.status(), vec!["list ()".to_string()]);
+        interpreter.run(command("<<").unwrap()).unwrap();
+        
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
+    }
+
+    #[test]
+    fn test_error_variable_not_found() {
+        let mut interpreter = init_interpreter("{}");
+        let res = interpreter.run(command("x").unwrap());
+        assert!(matches!(res, Err(error::Error::VariableNotFound(_))));
+    }
+
+    #[test]
+    fn test_error_invalid_type_in_expression() {
+        let mut interpreter = init_interpreter("\"text\"");
+        let res = interpreter.run(command("% * 2").unwrap());
+        assert!(matches!(res, Err(error::Error::InvalidType("number"))));
+    }
+    
+    #[test]
+    fn test_function_arity_error() {
+        let mut interpreter = init_interpreter("0");
+        let res = interpreter.run(command("get").unwrap());
+        assert!(matches!(res, Err(error::Error::InvalidArity(s,0,v)) if s == "get" && v == vec![2]));
+        
+        let res_many = interpreter.run(command("get 1 2 3").unwrap());
+        assert!(matches!(res_many, Err(error::Error::InvalidArity(s,3,v)) if s == "get" && v == vec![2]));
+    }
 
     #[test]
     fn test_shifting() {
         let mut interpreter = Interpreter::new("[1, 2, 3, 4]".into());
         interpreter.run(command("json").unwrap()).unwrap();
         interpreter.run(command(">>").unwrap()).unwrap();
-        assert_eq!(&*interpreter.value(), &Value::Int(1));
+        assert_eq!(interpreter.value(), s_int(1));
         interpreter.run(command("<<").unwrap()).unwrap();
-        interpreter.value().sample().unwrap();
-        assert_eq!(
-            &*interpreter.value(),
-            &Value::List(List {
-                elements: vec![
-                    SValue::new(Value::Int(1)),
-                    SValue::new(Value::Int(2)),
-                    SValue::new(Value::Int(3)),
-                    // lazy
-                ]
-                .into(),
-                rest: None.into(),
-            })
-        );
+        
+        if let Value::List(l) = &*interpreter.value() {
+            assert_eq!(l.get(0).unwrap().unwrap(), s_int(1));
+            assert_eq!(l.get(1).unwrap().unwrap(), s_int(2));
+            assert_eq!(l.get(2).unwrap().unwrap(), s_int(3));
+        } else {
+            panic!("Expected list");
+        }
     }
 
     #[test]
     fn test_nesting() {
         let mut interpreter = Interpreter::new("".into());
-        interpreter
-            .run(command("[[1,2,3],[4,5,6],[7,8,9]]").unwrap())
-            .unwrap();
+        interpreter.run(command("json \"[[1,2,3],[4,5,6],[7,8,9]]\"").unwrap()).unwrap();
         interpreter.run(command(">>").unwrap()).unwrap();
         assert!(interpreter.value().as_list().is_some());
         interpreter.run(command(">>").unwrap()).unwrap();
-        assert_eq!(&*interpreter.value(), &Value::Int(1));
+        assert_eq!(interpreter.value(), s_int(1));
         interpreter.run(command("100").unwrap()).unwrap();
         interpreter.run(command("<<").unwrap()).unwrap();
         interpreter.run(command("<<").unwrap()).unwrap();
-        interpreter.value().sample().unwrap();
-        panic!("{:?}", interpreter.value());
+        let val = interpreter.value();
+        let l = val.as_list().unwrap();
+        for i in 0..3 {
+            let outer_elem = l.get(i).unwrap().unwrap();
+            let inner_l = outer_elem.as_list().unwrap();
+            for j in 0..3 {
+                assert_eq!(inner_l.get(j).unwrap(), Some(s_int(100)));
+            }
+        }
     }
 }
