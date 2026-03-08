@@ -423,8 +423,8 @@ impl Program {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::data::{List, SValue, Value};
     use crate::parser::command;
-    use crate::data::{List, Value, SValue};
 
     fn init_interpreter(json_str: &str) -> Interpreter {
         let mut interpreter = Interpreter::new(json_str.into());
@@ -450,7 +450,7 @@ mod test {
     fn s_string(val: &str) -> SValue {
         SValue::new(Value::String(val.to_string()))
     }
-    
+
     fn s_bool(val: bool) -> SValue {
         SValue::new(Value::Bool(val))
     }
@@ -474,7 +474,7 @@ mod test {
         let res = interpreter_invalid.run(command("json").unwrap());
         assert!(matches!(res, Err(error::Error::BuiltinFunctionError(_))));
     }
-    
+
     #[test]
     fn test_arithmetic_expressions() {
         let mut interpreter = init_interpreter("0");
@@ -498,14 +498,16 @@ mod test {
         let mut interpreter = init_interpreter("{\"key\": \"value\", \"arr\": [10, 20]}");
         interpreter.run(command("get \"key\"").unwrap()).unwrap();
         assert_eq!(interpreter.value(), s_string("value"));
-        
+
         interpreter = init_interpreter("{\"key\": \"value\", \"arr\": [10, 20]}");
         interpreter.run(command("get \"arr\"").unwrap()).unwrap();
         interpreter.run(command("get 1").unwrap()).unwrap();
         assert_eq!(interpreter.value(), s_int(20));
 
         interpreter = init_interpreter("{}");
-        interpreter.run(command("get \"nonexistent\"").unwrap()).unwrap();
+        interpreter
+            .run(command("get \"nonexistent\"").unwrap())
+            .unwrap();
         assert_eq!(interpreter.value(), s_null());
 
         interpreter = init_interpreter("[1]");
@@ -529,12 +531,12 @@ mod test {
         assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
         assert_eq!(l.get(1).unwrap(), Some(s_int(100)));
         assert_eq!(l.get(2).unwrap(), Some(s_int(3)));
-        
+
         interpreter = init_interpreter("[1]");
         let res = interpreter.run(command("assoc 1 100").unwrap());
         assert!(res.is_err());
     }
-    
+
     #[test]
     fn test_shift_list_simple_transform() {
         let mut interpreter = init_interpreter("[1,2,3]");
@@ -563,7 +565,7 @@ mod test {
         interpreter.run(command("100").unwrap()).unwrap();
         interpreter.run(command("<<").unwrap()).unwrap();
         interpreter.run(command("<<").unwrap()).unwrap();
-        
+
         let val = interpreter.value();
         let outer_l = val.as_list().unwrap();
         for i in 0..3 {
@@ -579,14 +581,20 @@ mod test {
     fn test_shift_empty_list() {
         let mut interpreter = init_interpreter("[]");
         let res_shift_right = interpreter.run(command(">>").unwrap());
-        assert!(matches!(res_shift_right, Err(error::Error::ShiftRightEmptySequence)));
+        assert!(matches!(
+            res_shift_right,
+            Err(error::Error::ShiftRightEmptySequence)
+        ));
         let val = interpreter.value();
         let list = val.as_list().unwrap();
         assert!(list.get(0).unwrap().is_none());
 
         let mut interpreter2 = init_interpreter("[]");
         let res_shift_left = interpreter2.run(command("<<").unwrap());
-        assert!(matches!(res_shift_left, Err(error::Error::ShiftLeftNotInShift)));
+        assert!(matches!(
+            res_shift_left,
+            Err(error::Error::ShiftLeftNotInShift)
+        ));
     }
 
     #[test]
@@ -605,7 +613,7 @@ mod test {
         assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
         assert_eq!(l.get(1).unwrap(), Some(s_int(2)));
     }
-    
+
     #[test]
     #[ignore = "The k command in dict shift is not properly collecting keys into a list"]
     fn test_shift_dict_collect_keys() {
@@ -613,7 +621,7 @@ mod test {
         interpreter.run(command(">> k:v").unwrap()).unwrap();
         assert_eq!(interpreter.status(), vec!["dict (k: v)".to_string()]);
         interpreter.run(command("k").unwrap()).unwrap();
-        
+
         assert_eq!(interpreter.status(), vec!["dict (k: v)".to_string()]);
         let val = interpreter.value();
         let l = val.as_list().unwrap();
@@ -660,7 +668,7 @@ mod test {
         assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
         assert_eq!(l.get(1).unwrap(), Some(s_int(2)));
     }
-    
+
     #[test]
     fn test_undo_in_open_state() {
         let mut interpreter = init_interpreter("[1,2,3]");
@@ -673,7 +681,7 @@ mod test {
         assert_eq!(interpreter.value(), s_int(1));
         assert_eq!(interpreter.status(), vec!["list ()".to_string()]);
         interpreter.run(command("<<").unwrap()).unwrap();
-        
+
         let val = interpreter.value();
         let l = val.as_list().unwrap();
         assert_eq!(l.get(0).unwrap(), Some(s_int(1)));
@@ -692,15 +700,19 @@ mod test {
         let res = interpreter.run(command("% * 2").unwrap());
         assert!(matches!(res, Err(error::Error::InvalidType("number"))));
     }
-    
+
     #[test]
     fn test_function_arity_error() {
         let mut interpreter = init_interpreter("0");
         let res = interpreter.run(command("get").unwrap());
-        assert!(matches!(res, Err(error::Error::InvalidArity(s,0,v)) if s == "get" && v == vec![2]));
-        
+        assert!(
+            matches!(res, Err(error::Error::InvalidArity(s,0,v)) if s == "get" && v == vec![2])
+        );
+
         let res_many = interpreter.run(command("get 1 2 3").unwrap());
-        assert!(matches!(res_many, Err(error::Error::InvalidArity(s,3,v)) if s == "get" && v == vec![2]));
+        assert!(
+            matches!(res_many, Err(error::Error::InvalidArity(s,3,v)) if s == "get" && v == vec![2])
+        );
     }
 
     #[test]
@@ -710,7 +722,7 @@ mod test {
         interpreter.run(command(">>").unwrap()).unwrap();
         assert_eq!(interpreter.value(), s_int(1));
         interpreter.run(command("<<").unwrap()).unwrap();
-        
+
         if let Value::List(l) = &*interpreter.value() {
             assert_eq!(l.get(0).unwrap().unwrap(), s_int(1));
             assert_eq!(l.get(1).unwrap().unwrap(), s_int(2));
@@ -723,7 +735,9 @@ mod test {
     #[test]
     fn test_nesting() {
         let mut interpreter = Interpreter::new("".into());
-        interpreter.run(command("json \"[[1,2,3],[4,5,6],[7,8,9]]\"").unwrap()).unwrap();
+        interpreter
+            .run(command("json \"[[1,2,3],[4,5,6],[7,8,9]]\"").unwrap())
+            .unwrap();
         interpreter.run(command(">>").unwrap()).unwrap();
         assert!(interpreter.value().as_list().is_some());
         interpreter.run(command(">>").unwrap()).unwrap();
